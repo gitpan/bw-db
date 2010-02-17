@@ -1,0 +1,8 @@
+MANIFEST
+Makefile.PL
+README
+INSTALL
+lib/BW/DB.pm
+lib/BW/DB/CRUD.pm
+t/all.t
+META.yml                                 Module meta-data (added by MakeMaker)
