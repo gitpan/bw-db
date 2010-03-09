@@ -11,8 +11,7 @@ WriteMakefile(
     'AUTHOR'            => 'Bill Weinman (http://bw.org/)',
     'VERSION_FROM'      => 'lib/BW/DB.pm',
     'PREREQ_PM'         => {
-        'DBI'               => '0',
-        'DBD::mysql'        => '0',
+        'DBI'               => '1.52',
         'Digest::MD5'       => '0',
         'BW::Base'          => '0',
         'BW::Constants'     => '0'

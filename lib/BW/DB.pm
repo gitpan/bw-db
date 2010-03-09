@@ -1,10 +1,12 @@
 # BW::DB.pm
 # Normalized database routines
+#   with support for MySQL and SQLite
 # 
 # by Bill Weinman - http://bw.org/
 # Copyright (c) 1995-2010 The BearHeart Group, LLC
 #
-# See POD for History
+# See HISTORY file. 
+#
 
 package BW::DB;
 use strict;
@@ -14,14 +16,14 @@ use base qw( BW::Base );
 use BW::Constants;
 use DBI;
 
-our $VERSION = "1.0.4";
+our $VERSION = "1.1.0";
 
 sub _init
 {
     my $self = shift;
     $self->SUPER::_init(@_);
 
-    if ( $self->{connect} or $self->{dsn} or $self->{database} ) {
+    if ( $self->{connect} or $self->{dsn} or $self->{database} or $self->{dbengine} ) {
         $self->init_db;
     }
 
@@ -31,6 +33,7 @@ sub _init
 # _setter_getter entry points
 sub connect  { BW::Base::_setter_getter(@_); }
 sub database { BW::Base::_setter_getter(@_); }
+sub dbname   { BW::Base::_setter_getter(@_); }
 sub host     { BW::Base::_setter_getter(@_); }
 sub port     { BW::Base::_setter_getter(@_); }
 sub socket   { BW::Base::_setter_getter(@_); }
@@ -38,6 +41,7 @@ sub user     { BW::Base::_setter_getter(@_); }
 sub password { BW::Base::_setter_getter(@_); }
 sub dsn      { BW::Base::_setter_getter(@_); }
 sub dbh      { BW::Base::_setter_getter(@_); }
+sub dbengine { BW::Base::_setter_getter(@_); }  # may be 'mysql' or 'SQLite'
 
 # setup the database connection
 sub init_db
@@ -45,12 +49,21 @@ sub init_db
     my $sn   = 'init_db';
     my $self = shift;
 
-    my ( $dsn, $database, $host, $port, $socket, $user, $password );
+    my ( $dsn, $dbengine, $dbname, $database, $host, $port, $socket, $user, $password );
+    $dbengine = $self->{dbengine} || 'mysql';   # default to mysql for backward compatibility
 
     if ( $self->connect ) {
-        ( $database, $host, $port, $user, $password ) = split( /:/, $self->{connect} );
+        my @dsnarray = split( /:/, $self->{connect} );
+        if( scalar @dsnarray == 2 ) {
+            ( $dbengine, $dbname ) = @dsnarray;
+        } else {
+            ( $database, $host, $port, $user, $password ) = split( /:/, $self->{connect} );
+        }
     } elsif ( $self->{dsn} ) {
         $dsn = $self->{dsn};
+    } elsif ( $self->{dbname} ) {
+        $dbengine = 'SQLite',
+        $dbname = $self->{dbname};
     } elsif ( $self->{database} ) {
         $database = $self->{database};
         $host     = $self->{host};
@@ -58,9 +71,13 @@ sub init_db
         $socket   = $self->{socket};
     }
 
+    if(lc $dbengine eq 'sqlite') { $dbengine = 'SQLite' }; # correct any miscapitalization
+
     $user     = $self->{user}     if $self->{user};
     $password = $self->{password} if $self->{password};
-    $dsn = "DBI:mysql:database=$database" unless $dsn;
+    $dsn = "DBI:${dbengine}"        unless $dsn;
+    $dsn .= ":database=$database"   if $database;
+    $dsn .= ":dbname=$dbname"       if $dbname;
     $dsn .= ";host=$host"           if $host;
     $dsn .= ";port=$port"           if $port;
     $dsn .= ";mysql_socket=$socket" if $socket;
@@ -194,7 +211,7 @@ sub insert
 sub insert_id
 {
     my $self = shift;
-    return $self->{dbh}{insertid};
+    return $self->{dbh}->last_insert_id( '', '', '', '' );      # use the DBI function
 }
 
 sub table_exists
@@ -203,11 +220,16 @@ sub table_exists
     my $self       = shift;
     my $table_name = shift or return $self->_error("no table name");
 
-    my $rc = $self->sql_select("describe $table_name");
-    if ( $self->error ) {
-        return FALSE;
-    } else {
-        return TRUE;
+    if($self->{dbengine} eq 'SQLite') {
+        my $rc = $self->sql_select( "pragma table_info($table_name)" );
+        return scalar @$rc;     # pragma returns no rows if table doesn't exist
+    } elsif($self->{dbengine} eq 'mysql') {
+        my $rc = $self->sql_select("describe $table_name");
+        if ( $self->error ) {
+            return FALSE;
+        } else {
+            return TRUE;
+        }
     }
 }
 
@@ -232,22 +254,25 @@ BW::DB - Normalized database routines
 
 =head1 SYNOPSIS
 
-  use BW::DB;
-  my $errstr;
+    use BW::DB;
+    my $errstr;
 
-  my $db = BW::DB->new( connect => "database:host:3306:user:password" );
-  error($errstr) if (($errstr = $db->error));
+    my $db = BW::DB->new( connect => "database:host:3306:user:password" );
+    error($errstr) if (($errstr = $db->error));
 
-  my $db = BW::DB->new(
-    dsn => 'DBI:mysql:database=vdeck;mysql_socket=/tmp/mysql2.sock",
-    user => "me", password => "foo!bar" );
-  error($errstr) if(($errstr = $db->error));
+    my $db = BW::DB->new(
+        dsn => 'DBI:mysql:database=database;mysql_socket=/tmp/mysql2.sock",
+        user => "me", password => "foo!bar" );
+    error($errstr) if(($errstr = $db->error));
 
-  my $db = BW::DB->new(
-       database => "database", host => "host", port => "3306",
-       user => "user", password => "pass"
-     );
-  error($errstr) if (($errstr = $db->error));
+    my $db = BW::DB->new(
+        database => "database", host => "host", port => "3306",
+        user => "user", password => "pass");
+    error($errstr) if (($errstr = $db->error));
+
+    # experimental SQLite support ...
+    my $db = BW::DB->new(dbengine => "SQLite", dbname => "dbfile");
+    error($errstr) if (($errstr = $db->error));
 
 =head1 METHODS
 
@@ -259,6 +284,10 @@ Constructs a new DB object. Connect string is in the format:
 
   database:host:port:user:password
 
+... or for experimental SQLite support:
+
+  SQLite:dbfile
+
 Returns a blessed DB object reference. Returns VOID if an object 
 cannot be created. If the object is constructed but there is an 
 error connecting to the database, the object reference is returned 
@@ -267,16 +296,22 @@ and $db->error is set.
 Alternately you can call new() with separate parameters for the 
 database connection thusly:
 
-  my $db = BW::DB->new(
-       database => "database", host => "host", port => "3306",
-       user => "user", password => "pass"
-     );
+    my $db = BW::DB->new(
+        database => "database", host => "host", port => "3306",
+        user => "user", password => "pass"
+    );
+
+... or for experimental SQLite support:
+
+    my $db = BW::DB->new(
+        dbengine => "SQLite", dbname => "dbfile"
+    );
 
 If your database is listening on a named pipe you can connect using 
 a DBI DSN like this:
 
   my $db = BW::DB->new(
-    dsn => "DBI:mysql:database=vdeck;mysql_socket=/tmp/mysql2.sock",
+    dsn => "DBI:mysql:database=database;mysql_socket=/tmp/mysql2.sock",
     user => "me", password => "foo!bar" );
   error($errstr) if(($errstr = $db->error));
 
@@ -332,7 +367,7 @@ Returns and clears the object error message.
 
 =head1 AUTHOR
 
-Written by Bill Weinman in March 2007.
+Written by Bill Weinman E<lt>http://bw.org/E<gt>.
 
 =head1 COPYRIGHT
 
@@ -340,15 +375,7 @@ Copyright (c) 1995-2010 The BearHeart Group, LLC
 
 =head1 HISTORY
 
-    2010-02-02 bw 1.0.4 -- first CPAN version - some cleanup and documenting
-    2007-10-15 bw 1.0   -- fixed a small bug in sql_select -- should now return
-                            empty data sets properly
-    2007-07-16 bw 0.4   -- added sql_select_column and sql_select_value methods
-                        -- added 'socket' property for use in connecting database
-    2007-05-18 bw       -- added insert method and fixed a few bugs
-    2007-05-17 bw       -- fixed small typo in POD
-    2007-03-21 bw       -- updated to allow connecting to the database
-    2007-03-14 bw       -- initial release.
+See HISTORY file.
 
 =cut
 
