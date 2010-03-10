@@ -16,7 +16,7 @@ use base qw( BW::Base );
 use BW::Constants;
 use DBI;
 
-our $VERSION = "1.1.0";
+our $VERSION = "1.1.1";
 
 sub _init
 {
@@ -62,7 +62,7 @@ sub init_db
     } elsif ( $self->{dsn} ) {
         $dsn = $self->{dsn};
     } elsif ( $self->{dbname} ) {
-        $dbengine = 'SQLite',
+        $dbengine = 'SQLite';
         $dbname = $self->{dbname};
     } elsif ( $self->{database} ) {
         $database = $self->{database};
@@ -72,6 +72,9 @@ sub init_db
     }
 
     if(lc $dbengine eq 'sqlite') { $dbengine = 'SQLite' }; # correct any miscapitalization
+
+    $self->dbengine($dbengine) if $dbengine;    # use the setters
+    $self->dbname($dbname) if $dbname;
 
     $user     = $self->{user}     if $self->{user};
     $password = $self->{password} if $self->{password};

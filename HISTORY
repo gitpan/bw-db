@@ -1,3 +1,4 @@
+2010-03-09 bw 1.1.1 -- bugfix - initializations for SQLite
 2010-03-08 bw 1.1.0 -- added experimental support for SQLite
 2010-02-02 bw 1.0.5 -- updated documentation
 2010-02-02 bw 1.0.4 -- first CPAN version - some cleanup and documenting
